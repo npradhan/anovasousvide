@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anova Sous Vide</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --card: #ffffff; --text: #1b1f24; --muted: #6b7280;
+    --accent: #e4572e; --ok: #2e9e5b; --border: #e2e5ea; --cold: #3b82f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #111418; --card: #1b2027; --text: #eef1f4; --muted: #9aa3ad; --border: #2b323b; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 480px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  h1 { font-size: 1.25rem; margin: 0; }
+  .pill { font-size: .8rem; padding: 4px 10px; border-radius: 999px; background: var(--border); color: var(--muted); }
+  .pill.on { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .pill.off { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+  .temps { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; text-align: center; }
+  .label { font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+  .big { font-size: 2.6rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .big small { font-size: 1rem; color: var(--muted); font-weight: 500; }
+  .bar { height: 6px; border-radius: 3px; background: var(--border); margin-top: 12px; overflow: hidden; }
+  .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--cold), var(--accent)); transition: width .5s; }
+  button { font: inherit; border: 0; border-radius: 12px; padding: 12px 16px; cursor: pointer; background: var(--border); color: var(--text); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: var(--ok); color: #fff; width: 100%; font-size: 1.1rem; font-weight: 600; padding: 16px; }
+  button.primary.running { background: var(--accent); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row input { flex: 1; min-width: 0; font: inherit; padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .units { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .units button { border-radius: 0; padding: 6px 12px; background: transparent; }
+  .units button.active { background: var(--text); color: var(--card); }
+  .presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .presets button { padding: 6px 10px; font-size: .85rem; }
+  .error { color: var(--accent); font-size: .9rem; min-height: 1.2em; margin: 4px 0 0; }
+  .muted { color: var(--muted); font-size: .85rem; }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🍳 Anova Sous Vide</h1>
+    <span id="conn" class="pill">Connecting…</span>
+  </header>
+
+  <section class="card">
+    <div class="temps">
+      <div><div class="label">Water</div><div class="big" id="actual">--<small></small></div></div>
+      <div><div class="label">Target</div><div class="big" id="desired">--<small></small></div></div>
+    </div>
+    <div class="bar"><div id="progress"></div></div>
+  </section>
+
+  <section class="card">
+    <button id="toggle" class="primary" disabled>Start</button>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content: space-between; margin-bottom: 10px;">
+      <h2 style="margin:0">Set temperature</h2>
+      <div class="units"><button data-unit="c">°C</button><button data-unit="f">°F</button></div>
+    </div>
+    <form id="tempForm" class="row">
+      <button type="button" id="minus" aria-label="Lower">−</button>
+      <input id="tempInput" type="number" step="0.1" inputmode="decimal" required>
+      <button type="button" id="plus" aria-label="Raise">+</button>
+      <button type="submit">Set</button>
+    </form>
+    <div class="presets" id="presets"></div>
+  </section>
+
+  <section class="card">
+    <h2>Timer</h2>
+    <form id="timerForm" class="row">
+      <input id="hours" type="number" min="0" max="99" placeholder="h" aria-label="Hours">
+      <input id="minutes" type="number" min="0" max="59" placeholder="min" aria-label="Minutes">
+      <button type="submit">Start timer</button>
+      <button type="button" id="stopTimer">Cancel</button>
+    </form>
+    <p class="muted" id="timerStatus">No timer set. When a timer runs out the cooker stops.</p>
+  </section>
+
+  <p class="error" id="error"></p>
+  <p class="muted" id="meta"></p>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const PRESETS = [ // [label, °C]
+  ["Steak med-rare", 54.5], ["Steak medium", 57.5], ["Chicken breast", 63], ["Pork chop", 60],
+  ["Salmon", 50], ["Eggs", 63.5], ["Veg", 85],
+];
+let unit = localStorageGet("unit") || "c";
+let state = null;
+let inputDirty = false;
+
+function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+const fmt = (c, f) => {
+  const v = unit === "c" ? c : f;
+  return v == null ? "--" : v.toFixed(1);
+};
+const toUnit = (c) => unit === "c" ? c : c * 9 / 5 + 32;
+
+async function api(path, method = "GET", body) {
+  const res = await fetch(path, {
+    method, headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    let msg = data.detail;
+    if (Array.isArray(msg)) msg = msg.map((d) => d.msg).join("; ");
+    throw new Error(msg || res.statusText);
+  }
+  return data;
+}
+
+async function act(fn) {
+  $("error").textContent = "";
+  try { render(await fn()); }
+  catch (e) { $("error").textContent = e.message; }
+}
+
+function render(s) {
+  state = s;
+  const conn = $("conn");
+  conn.textContent = s.connected ? (s.mock ? "Simulated" : "Connected") : "Disconnected";
+  conn.className = "pill " + (s.connected ? "on" : "off");
+
+  const u = unit === "c" ? "°C" : "°F";
+  $("actual").innerHTML = `${fmt(s.actual_temp_c, s.actual_temp_f)}<small>${u}</small>`;
+  $("desired").innerHTML = `${fmt(s.desired_temp_c, s.desired_temp_f)}<small>${u}</small>`;
+  if (!inputDirty && s.desired_temp_c != null) $("tempInput").value = fmt(s.desired_temp_c, s.desired_temp_f);
+
+  const pct = (s.actual_temp_c != null && s.desired_temp_c)
+    ? Math.max(0, Math.min(100, (s.actual_temp_c / s.desired_temp_c) * 100)) : 0;
+  $("progress").style.width = pct + "%";
+
+  const t = $("toggle");
+  t.disabled = !s.connected;
+  t.textContent = s.is_running ? "Stop cooking" : "Start cooking";
+  t.classList.toggle("running", s.is_running);
+
+  if (s.timer_running && s.timer_minutes != null) {
+    const h = Math.floor(s.timer_minutes / 60), m = s.timer_minutes % 60;
+    $("timerStatus").textContent = `Timer running: ${h ? h + " h " : ""}${m} min left`;
+  } else {
+    $("timerStatus").textContent = "No timer set. When a timer runs out the cooker stops.";
+  }
+
+  document.querySelectorAll(".units button").forEach((b) => b.classList.toggle("active", b.dataset.unit === unit));
+  $("error").textContent = s.error && !s.connected ? s.error : $("error").textContent;
+  $("meta").textContent = s.device_id ? `Device ${s.device_id} · last update ${s.last_update ? new Date(s.last_update * 1000).toLocaleTimeString() : "never"}` : "";
+}
+
+function renderPresets() {
+  $("presets").innerHTML = "";
+  for (const [label, c] of PRESETS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = `${label} ${toUnit(c).toFixed(1)}°`;
+    b.onclick = () => act(() => api("/api/temperature", "POST", { value: c, unit: "c" }));
+    $("presets").appendChild(b);
+  }
+}
+
+$("toggle").onclick = () => act(() => api(state?.is_running ? "/api/stop" : "/api/start", "POST"));
+
+$("tempForm").onsubmit = (e) => {
+  e.preventDefault();
+  inputDirty = false;
+  act(() => api("/api/temperature", "POST", { value: parseFloat($("tempInput").value), unit }));
+};
+$("tempInput").oninput = () => inputDirty = true;
+const nudge = (d) => {
+  const v = parseFloat($("tempInput").value) || 0;
+  $("tempInput").value = (v + d).toFixed(1);
+  inputDirty = true;
+};
+$("minus").onclick = () => nudge(-0.5);
+$("plus").onclick = () => nudge(0.5);
+
+$("timerForm").onsubmit = (e) => {
+  e.preventDefault();
+  const minutes = (parseInt($("hours").value) || 0) * 60 + (parseInt($("minutes").value) || 0);
+  act(() => api("/api/timer", "POST", { minutes }));
+};
+$("stopTimer").onclick = () => act(() => api("/api/timer", "DELETE"));
+
+document.querySelectorAll(".units button").forEach((b) => b.onclick = () => {
+  unit = b.dataset.unit;
+  localStorageSet("unit", unit);
+  inputDirty = false;
+  renderPresets();
+  if (state) render(state);
+});
+
+async function poll() {
+  try { render(await api("/api/state")); }
+  catch (e) { $("conn").textContent = "Server unreachable"; $("conn").className = "pill off"; }
+  setTimeout(poll, 1000);
+}
+renderPresets();
+poll();
+</script>
+</body>
+</html>
