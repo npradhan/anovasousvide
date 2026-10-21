@@ -10,9 +10,12 @@
 //  length. It is printed as two halves (standing up for clean threads)
 //  joined by a glued hex peg/socket in the middle.
 //
-//  Each carriage has two screw ears to the sides of the rod (90 deg from
-//  it). The screws go in perpendicular to the rod, through a flat mounting
-//  face. Whatever the carriages are screwed to stops them from spinning.
+//  Each carriage houses a ball bearing (1-1/8" OD x 1/2" ID x 5/16" wide,
+//  e.g. R8-2RS) in a press-fit pocket on one side. The bearing axis is
+//  perpendicular to the rod and passes through the rod's center line.
+//  A 1/2" pin (not modelled) through the bearing connects the carriage to
+//  the side member. The pinned side members stop the carriages from
+//  spinning with the rod.
 //
 //  Parts (set PART below, or use -D PART="..." on the command line):
 //    "assembly"   - everything in place (viewing only)
@@ -24,13 +27,15 @@
 //    "knob"       - crank knob, spins on an M5 x 40 bolt                         x1
 //
 //  Bought parts:
-//    4x  M4 or #8 screws to mount the carriages (head <= 8 mm dia)
+//    2x  ball bearing 1-1/8" OD x 1/2" ID x 5/16" wide (R8)
+//    2x  1/2" pins (your side members)
 //    1x  M5 x 40 bolt + nylock nut (crank knob)
 //    Epoxy for the hex joint (it holds the two rod halves together)
 //
 //  Print notes: PETG or PLA, 0.2 mm layers, 4 perimeters, 40 % infill.
 //    rod halves: stand vertically, square drive / peg pointing up, brim.
-//    carriages:  as exported (thread axis vertical), no supports.
+//    carriages:  as exported (thread axis vertical), no supports; the
+//                bearing pocket has a teardrop top so it prints cleanly.
 //    crank / knob: as exported, no supports.
 // =====================================================================
 
@@ -62,15 +67,20 @@ HEX_AF   = 10;    // center coupling hex across flats
 HEX_LEN  = 18;
 HEX_CLR  = 0.3;
 
+// ---------------- bearing ----------------
+B_OD      = 1.125 * 25.4;   // 28.575
+B_ID      = 0.5   * 25.4;   // 12.7
+B_W       = 5/16  * 25.4;   // 7.9375
+B_FIT     = 0.15;   // diametral press-fit allowance on the pocket (tune for your printer)
+B_PROUD   = 0.5;    // bearing face stands this far out of the carriage
+B_RELIEF  = 20;     // clearance behind the inner race (race must not rub the floor)
+
 // ---------------- carriage ----------------
-CAR_T     = 26;     // length along the rod
-HUB_D     = 38;     // round body around the nut thread
-EAR_SPAN  = 92;     // overall width across both ears
-EAR_T     = 14;     // ear thickness (screw length through it)
-EAR_HOLE  = 34;     // screw hole distance from rod axis
-SCREW_D   = 4.5;    // clearance hole: M4 / #8
-HEAD_D    = 8.5;    // counterbore for the screw head
-FACE_Y    = -HUB_D/2;  // flat mounting face, tangent to the hub
+CAR_T     = 42;     // length along the rod
+CAR_W     = 40;     // width perpendicular to rod and bearing axis
+CAR_BACK  = 20;     // radius of the round back of the carriage
+FLOOR_Y   = -(D/2 + CLR + 3.5);       // bearing seat (pocket floor), 3.5 mm from the thread
+FACE_Y    = FLOOR_Y - (B_W - B_PROUD); // bearing-side face of the carriage
 
 // =====================================================================
 //  Thread primitives
@@ -155,30 +165,53 @@ module rod_lh() {   // far half
 
 // =====================================================================
 //  Carriage  (modelled with the rod axis along +Z, z = 0..CAR_T;
-//  ears along X, flat mounting face at y = FACE_Y, screws along Y)
+//  bearing axis along -Y, through the rod axis at z = CAR_T/2)
 // =====================================================================
+
+// circle with a flat-topped 45 deg peak (+Y in 2D) so a horizontal
+// hole prints without support
+module teardrop(d, top = 2) {
+    r = d/2;
+    intersection() {
+        union() {
+            circle(d = d);
+            rotate(45) square(r);
+        }
+        translate([-d, -d]) square([2*d, d + r + top]);
+    }
+}
+
+// pocket shapes, extruded along -Y from y = y0 for length len
+module along_minus_y(y0, len) {
+    translate([0, y0, CAR_T/2]) rotate([90, 0, 0]) linear_extrude(len) children();
+}
 
 module carriage(hand) {
     difference() {
         linear_extrude(CAR_T) hull() {
-            circle(d = HUB_D);
-            for (s = [-1, 1])
-                translate([s*(EAR_SPAN/2 - 7), FACE_Y + 7]) circle(r = 7);
-            translate([-EAR_SPAN/2 + 7, FACE_Y]) square([EAR_SPAN - 14, 1]);
+            circle(r = CAR_BACK);
+            translate([-CAR_W/2, FACE_Y]) square([CAR_W, 1]);
         }
-        // trim the ears to EAR_T thick (keeps the hub full height)
-        for (m = [0, 1]) mirror([m, 0, 0])
-            translate([HUB_D/2 - 2, FACE_Y + EAR_T, -1]) cube([EAR_SPAN, 50, CAR_T + 2]);
         // internal thread
         translate([0,0,-0.01]) thread(CAR_T + 0.02, D/2 + CLR, hand);
         // entry chamfers
         for (z = [0, CAR_T]) translate([0,0,z])
             cylinder(h = 3, d1 = D + 2*CLR + 2, d2 = D - 2*H, center = true);
-        // screw holes, perpendicular to the rod, counterbored from the top
-        for (s = [-1, 1]) translate([s*EAR_HOLE, 0, CAR_T/2]) {
-            translate([0, FACE_Y - 1, 0]) rotate([-90,0,0]) cylinder(h = 60, d = SCREW_D, $fn = 32);
-            translate([0, FACE_Y + EAR_T - 4, 0]) rotate([-90,0,0]) cylinder(h = 60, d = HEAD_D, $fn = 32);
-        }
+        // bearing pocket (teardrop top for printing; the bearing seats on the round part)
+        along_minus_y(FLOOR_Y, B_W + 1) teardrop(B_OD + B_FIT, 2);
+        // lead-in chamfer on the pocket mouth
+        along_minus_y(FACE_Y + 0.8, 1) teardrop(B_OD + B_FIT + 1.6, 2);
+        // relief behind the inner race / pin end
+        along_minus_y(FLOOR_Y + 1.2, 1.3) teardrop(B_RELIEF, 2);
+    }
+}
+
+module bearing() {
+    rotate([90, 0, 0]) difference() {
+        cylinder(h = B_W, d = B_OD);
+        translate([0, 0, -1]) cylinder(h = B_W + 2, d = B_ID);
+        for (z = [0, B_W]) translate([0, 0, z])     // seal / race detail
+            difference() { cylinder(h = 0.6, d = B_OD - 3, center = true); cylinder(h = 1, d = B_ID + 4, center = true); }
     }
 }
 
@@ -223,25 +256,20 @@ module knob() {
 //  Assembly  (rod axis along X, center joint at x = 0)
 // =====================================================================
 
-SPREAD = 70;    // carriage centers at +/- SPREAD  (13 = closed ... 112 = fully open)
+SPREAD = 70;    // carriage centers at +/- SPREAD  (21 = closed ... 104 = fully open)
 
 module assembly() {
     // rod: drive half (RH) on the -X side, square drive pointing -X
     color("SteelBlue")      rotate([0,-90,0]) rod_rh();
     color("CornflowerBlue") rotate([0, 90,0]) rod_lh();
 
-    // carriages: mounting face down (-Z), ears to the sides (+/-Y)
-    color("Tomato") translate([-SPREAD - CAR_T/2, 0, 0])
-        rotate([90, 0, 90]) carriage(1);
-    color("Tomato") translate([ SPREAD - CAR_T/2, 0, 0])
-        rotate([90, 0, 90]) carriage(-1);
-
-    // screws in the carriage ears
-    color("DimGray") for (x = [-SPREAD, SPREAD], s = [-1, 1])
-        translate([x, s*EAR_HOLE, FACE_Y + EAR_T - 4]) {
-            cylinder(h = 3.5, d = 8);
-            translate([0,0,-16]) cylinder(h = 16, d = 4);
-        }
+    // carriages: bearing on the -Y side, bearing axis through the rod axis
+    for (side = [-1, 1]) translate([side*SPREAD - CAR_T/2, 0, 0]) rotate([0, 90, 0]) {
+        color("Tomato") carriage(side < 0 ? 1 : -1);
+        color("Silver") translate([0, FLOOR_Y, CAR_T/2]) bearing();
+        // bearing axis (for reference) - ends at the rod center line
+        %translate([0, 0, CAR_T/2]) rotate([90, 0, 0]) cylinder(h = 45, d = 1);
+    }
 
     // handle on the square drive
     drive_tip = -(T_LEN + SHANK + FL_T + SQ_LEN);
