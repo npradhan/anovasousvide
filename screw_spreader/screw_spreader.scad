@@ -6,9 +6,13 @@
 //  from each other: the drive half of the rod has a RIGHT-hand thread,
 //  the other half a LEFT-hand thread.
 //
-//  The rod is 297 mm long (11.7") overall, with 250 mm of threaded
-//  length. It is printed as two halves (each ~160 mm tall, printed
-//  standing up for clean threads) joined by a hex peg/socket in the middle.
+//  The rod is 272 mm (10.7") long overall, with 250 mm of threaded
+//  length. It is printed as two halves (standing up for clean threads)
+//  joined by a glued hex peg/socket in the middle.
+//
+//  Each carriage has two screw ears to the sides of the rod (90 deg from
+//  it). The screws go in perpendicular to the rod, through a flat mounting
+//  face. Whatever the carriages are screwed to stops them from spinning.
 //
 //  Parts (set PART below, or use -D PART="..." on the command line):
 //    "assembly"   - everything in place (viewing only)
@@ -16,22 +20,18 @@
 //    "rod_lh"     - far half, left-hand thread, hex peg                          x1
 //    "carriage_rh"- carriage with right-hand nut thread                          x1
 //    "carriage_lh"- carriage with left-hand nut thread                           x1
-//    "end_block"  - end plate: rod bearing + 2 guide rods                        x2
-//    "end_collar" - retaining collar for the far end (M4 x 12 screw)            x1
 //    "crank"      - crank handle with 3/8" square socket                         x1
 //    "knob"       - crank knob, spins on an M5 x 40 bolt                         x1
 //
 //  Bought parts:
-//    2x  8 mm steel or aluminum rod, 279 mm long (guide rods; keep carriages from spinning)
-//    1x  M4 x 12 screw + washer (end collar)
+//    4x  M4 or #8 screws to mount the carriages (head <= 8 mm dia)
 //    1x  M5 x 40 bolt + nylock nut (crank knob)
-//    Epoxy or CA glue for the hex joint (optional; the joint is also
-//    held together axially by the end blocks)
+//    Epoxy for the hex joint (it holds the two rod halves together)
 //
 //  Print notes: PETG or PLA, 0.2 mm layers, 4 perimeters, 40 % infill.
 //    rod halves: stand vertically, square drive / peg pointing up, brim.
-//    carriages:  thread axis vertical (flat face down) - no supports.
-//    end blocks / crank / knob: flat, no supports.
+//    carriages:  as exported (thread axis vertical), no supports.
+//    crank / knob: as exported, no supports.
 // =====================================================================
 
 PART = "assembly";
@@ -52,8 +52,8 @@ CLR    = 0.35;    // radial clearance of the nut thread (tune for your printer)
 
 // ---------------- rod layout (per half, measured from the center joint) --------
 T_LEN    = 125;   // threaded length per half
-J_D      = 14;    // journal (bearing) diameter
-J_LEN    = 15;    // journal length
+SHANK_D  = 16;    // plain shank between thread and drive flange
+SHANK    = 5;
 FL_D     = 26;    // drive-end flange
 FL_T     = 3;
 SQ       = 9.525; // 3/8" square drive
@@ -62,21 +62,15 @@ HEX_AF   = 10;    // center coupling hex across flats
 HEX_LEN  = 18;
 HEX_CLR  = 0.3;
 
-// ---------------- frame ----------------
-GUIDE_D   = 8;      // guide rod diameter
-GUIDE_Y   = 30;     // guide rod offset from screw axis
-BLK_T     = 14;     // end block thickness (along the rod)
-BLK_W     = 84;
-BLK_H     = 44;
-BEAR_CLR  = 0.5;    // diametral clearance of the printed plain bearing
-
 // ---------------- carriage ----------------
-CAR_T     = 26;     // along the rod
-CAR_W     = 84;
-CAR_H     = 44;
-JAW_H     = 70;     // jaw height above the screw axis
-JAW_W     = 44;
-JAW_T     = 14;
+CAR_T     = 26;     // length along the rod
+HUB_D     = 38;     // round body around the nut thread
+EAR_SPAN  = 92;     // overall width across both ears
+EAR_T     = 14;     // ear thickness (screw length through it)
+EAR_HOLE  = 34;     // screw hole distance from rod axis
+SCREW_D   = 4.5;    // clearance hole: M4 / #8
+HEAD_D    = 8.5;    // counterbore for the screw head
+FACE_Y    = -HUB_D/2;  // flat mounting face, tangent to the hub
 
 // =====================================================================
 //  Thread primitives
@@ -114,28 +108,28 @@ module thread(len, rmaj, hand = 1) {
 //  Rod halves  (built along +Z from the center joint at z = 0)
 // =====================================================================
 
+// threaded section with small chamfers at both ends
 module rod_body(hand) {
-    // threaded section with small chamfer at the center end
     intersection() {
         thread(T_LEN, D/2, hand);
         union() {
             cylinder(h = 1.5, d1 = D - 2*H, d2 = D);
-            translate([0,0,1.5]) cylinder(h = T_LEN, d = D + 1);
+            translate([0,0,1.5]) cylinder(h = T_LEN - 3, d = D + 1);
+            translate([0,0,T_LEN - 1.5]) cylinder(h = 1.5, d1 = D, d2 = D - 2*H);
         }
     }
-    // journal
-    translate([0,0,T_LEN - 0.01]) cylinder(h = J_LEN + 0.01, d = J_D);
-    // fillet between thread and journal
-    translate([0,0,T_LEN - 0.01]) cylinder(h = 1.5, d1 = D - 2*H, d2 = J_D);
+    // solid core so the thread and chamfers stay one body
+    cylinder(h = T_LEN, d = D - 2*H + 0.01);
 }
 
 module rod_rh() {   // drive half
     difference() {
         union() {
             rod_body(1);
-            translate([0,0,T_LEN + J_LEN - 0.01]) cylinder(h = FL_T, d = FL_D);
+            translate([0,0,T_LEN - 0.01]) cylinder(h = SHANK + 0.01, d = SHANK_D);
+            translate([0,0,T_LEN + SHANK - 0.01]) cylinder(h = FL_T, d = FL_D);
             // square drive with a lead-in chamfer
-            translate([0,0,T_LEN + J_LEN + FL_T - 0.01])
+            translate([0,0,T_LEN + SHANK + FL_T - 0.01])
                 hull() {
                     linear_extrude(SQ_LEN - 1) square(SQ, center = true);
                     linear_extrude(SQ_LEN) square(SQ - 2, center = true);
@@ -150,11 +144,7 @@ module rod_rh() {   // drive half
 }
 
 module rod_lh() {   // far half
-    difference() {
-        rod_body(-1);
-        // pilot hole for the M4 collar screw (self-tapping)
-        translate([0,0,T_LEN + J_LEN - 16]) cylinder(h = 17, d = 3.4, $fn = 24);
-    }
+    rod_body(-1);
     // hex peg with chamfered tip
     translate([0,0,-HEX_LEN + 0.01])
         intersection() {
@@ -163,59 +153,32 @@ module rod_lh() {   // far half
         }
 }
 
-module end_collar() {
-    difference() {
-        cylinder(h = 4, d = FL_D);
-        translate([0,0,-1]) cylinder(h = 6, d = 4.5, $fn = 24);
-        translate([0,0,2]) cylinder(h = 3, d = 8.5, $fn = 32);   // screw head counterbore
-    }
-}
-
 // =====================================================================
-//  Frame + carriages   (modelled with the rod axis along +Z, z = 0..thick)
+//  Carriage  (modelled with the rod axis along +Z, z = 0..CAR_T;
+//  ears along X, flat mounting face at y = FACE_Y, screws along Y)
 // =====================================================================
-
-module rounded_rect(w, h, r) {
-    offset(r) offset(-r) square([w, h], center = true);
-}
-
-module end_block() {
-    difference() {
-        linear_extrude(BLK_T) rounded_rect(BLK_W, BLK_H, 6);
-        // plain bearing for the journal, chamfered both sides
-        translate([0,0,-1]) cylinder(h = BLK_T + 2, d = J_D + BEAR_CLR);
-        for (z = [0, BLK_T]) translate([0,0,z]) cylinder(h = 2, d = J_D + BEAR_CLR + 3, center = true);
-        // guide rods: snug, glue or press in
-        for (s = [-1, 1]) translate([s*GUIDE_Y, 0, -1])
-            cylinder(h = BLK_T + 2, d = GUIDE_D + 0.15, $fn = 48);
-        // mounting holes (M4)
-        for (s = [-1, 1]) translate([s*(BLK_W/2 - 7), BLK_H/2 - 8, -1])
-            cylinder(h = BLK_T + 2, d = 4.4, $fn = 24);
-    }
-}
 
 module carriage(hand) {
     difference() {
-        union() {
-            linear_extrude(CAR_T) rounded_rect(CAR_W, CAR_H, 6);
-            // jaw plate (flush with one face of the carriage)
-            translate([-JAW_W/2, 0, 0]) cube([JAW_W, JAW_H, JAW_T]);
-            // gusset tying the jaw into the body
-            hull() {
-                translate([-JAW_W/2, CAR_H/2 - 1, 0]) cube([JAW_W, 1, CAR_T]);
-                translate([-JAW_W/2, CAR_H/2 + 14, 0]) cube([JAW_W, 1, JAW_T]);
-            }
+        linear_extrude(CAR_T) hull() {
+            circle(d = HUB_D);
+            for (s = [-1, 1])
+                translate([s*(EAR_SPAN/2 - 7), FACE_Y + 7]) circle(r = 7);
+            translate([-EAR_SPAN/2 + 7, FACE_Y]) square([EAR_SPAN - 14, 1]);
         }
+        // trim the ears to EAR_T thick (keeps the hub full height)
+        for (m = [0, 1]) mirror([m, 0, 0])
+            translate([HUB_D/2 - 2, FACE_Y + EAR_T, -1]) cube([EAR_SPAN, 50, CAR_T + 2]);
         // internal thread
         translate([0,0,-0.01]) thread(CAR_T + 0.02, D/2 + CLR, hand);
         // entry chamfers
         for (z = [0, CAR_T]) translate([0,0,z])
             cylinder(h = 3, d1 = D + 2*CLR + 2, d2 = D - 2*H, center = true);
-        // guide rod bushings (sliding fit)
-        for (s = [-1, 1]) translate([s*GUIDE_Y, 0, -1])
-            cylinder(h = CAR_T + 2, d = GUIDE_D + 0.6, $fn = 48);
-        // recess for a rubber / felt pad on the jaw face
-        translate([-(JAW_W - 8)/2, CAR_H/2 + 16, -0.01]) cube([JAW_W - 8, JAW_H - CAR_H/2 - 20, 1.2]);
+        // screw holes, perpendicular to the rod, counterbored from the top
+        for (s = [-1, 1]) translate([s*EAR_HOLE, 0, CAR_T/2]) {
+            translate([0, FACE_Y - 1, 0]) rotate([-90,0,0]) cylinder(h = 60, d = SCREW_D, $fn = 32);
+            translate([0, FACE_Y + EAR_T - 4, 0]) rotate([-90,0,0]) cylinder(h = 60, d = HEAD_D, $fn = 32);
+        }
     }
 }
 
@@ -260,36 +223,28 @@ module knob() {
 //  Assembly  (rod axis along X, center joint at x = 0)
 // =====================================================================
 
-SPREAD = 80;    // carriage centers at +/- SPREAD  (13 = closed ... 112 = fully open)
-
-module along_x(x) { translate([x,0,0]) rotate([0,90,0]) children(); }
+SPREAD = 70;    // carriage centers at +/- SPREAD  (13 = closed ... 112 = fully open)
 
 module assembly() {
-    blk_in = T_LEN + 0.5;                 // inner face of each end block
-
     // rod: drive half (RH) on the -X side, square drive pointing -X
-    color("SteelBlue")   translate([0,0,0]) rotate([0,-90,0]) rod_rh();
+    color("SteelBlue")      rotate([0,-90,0]) rod_rh();
     color("CornflowerBlue") rotate([0, 90,0]) rod_lh();
-    color("DimGray") along_x(T_LEN + J_LEN) end_collar();
 
-    // end blocks
-    color("Orange") along_x(-blk_in - BLK_T) end_block();
-    color("Orange") along_x( blk_in)         end_block();
-
-    // guide rods
-    g_len = 2*(blk_in + BLK_T);
-    color("Silver") for (s = [-1, 1])
-        translate([-g_len/2, s*GUIDE_Y, 0]) rotate([0,90,0]) rotate([0,0,0])
-            cylinder(h = g_len, d = GUIDE_D);
-
-    // carriages, jaws facing up (+Z), jaw plates on the outer faces
+    // carriages: mounting face down (-Z), ears to the sides (+/-Y)
     color("Tomato") translate([-SPREAD - CAR_T/2, 0, 0])
         rotate([90, 0, 90]) carriage(1);
     color("Tomato") translate([ SPREAD - CAR_T/2, 0, 0])
-        rotate([0, 0, 180]) translate([-CAR_T, 0, 0]) rotate([90, 0, 90]) carriage(-1);
+        rotate([90, 0, 90]) carriage(-1);
+
+    // screws in the carriage ears
+    color("DimGray") for (x = [-SPREAD, SPREAD], s = [-1, 1])
+        translate([x, s*EAR_HOLE, FACE_Y + EAR_T - 4]) {
+            cylinder(h = 3.5, d = 8);
+            translate([0,0,-16]) cylinder(h = 16, d = 4);
+        }
 
     // handle on the square drive
-    drive_tip = -(T_LEN + J_LEN + FL_T + SQ_LEN);
+    drive_tip = -(T_LEN + SHANK + FL_T + SQ_LEN);
     color("SeaGreen") translate([drive_tip - (24 - SQ_LEN - 1) - 0.5, 0, 0])
         rotate([0, 90, 0]) rotate([0,0,90]) crank_with_knob();
 }
@@ -302,10 +257,8 @@ module crank_with_knob() {
 // =====================================================================
 if      (PART == "assembly")    assembly();
 else if (PART == "rod_rh")      rod_rh();
-else if (PART == "rod_lh")      rotate([180,0,0]) translate([0,0,-(T_LEN + J_LEN)]) rod_lh();
+else if (PART == "rod_lh")      rotate([180,0,0]) translate([0,0,-T_LEN]) rod_lh();
 else if (PART == "carriage_rh") carriage(1);
 else if (PART == "carriage_lh") carriage(-1);
-else if (PART == "end_block")   end_block();
-else if (PART == "end_collar")  end_collar();
 else if (PART == "crank")       crank();
 else if (PART == "knob")        knob();
